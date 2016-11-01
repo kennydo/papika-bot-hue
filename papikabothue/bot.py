@@ -24,6 +24,19 @@ class PapikaBotHue:
             group_id=config['kafka']['from_slack']['group_id'],
         )
 
+    def send_message(self, *, channel: str, text: str) -> None:
+        value = {
+            'channel': channel,
+            'text': text,
+        }
+        value = json.dumps(value).encode('utf-8')
+        log.info("Sending to Kafka: {0}".format(value))
+
+        self.kafka_producer.send(
+            self.destination_kafka_topic,
+            value
+        )
+
     def run(self):
         for record in self.kafka_consumer:
             raw_message = record.value
@@ -49,3 +62,9 @@ class PapikaBotHue:
                 continue
 
             log.info("Received Slack event: {0}".format(slack_event))
+            received_text = slack_event.get('text')
+            channel = slack_event.get('channel')
+
+            received_tokens = received_text.split()
+            if received_tokens == ['hue', 'status']:
+                self.send_message(channel=channel, text="Pretend this *is* _Hue_ status!")
