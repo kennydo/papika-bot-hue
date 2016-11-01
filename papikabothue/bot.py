@@ -6,6 +6,7 @@ from typing import (
 )
 
 import kafka
+import phue
 
 
 log = logging.getLogger(__name__)
@@ -24,6 +25,11 @@ class PapikaBotHue:
             group_id=config['kafka']['from_slack']['group_id'],
         )
 
+        self.hue_bridge = phue.Bridge(
+            ip=config['hue_bridge']['ip_address'],
+            username=config['hue_bridge']['username'],
+        )
+
     def send_message(self, *, channel: str, text: str) -> None:
         value = {
             'channel': channel,
@@ -36,6 +42,22 @@ class PapikaBotHue:
             self.destination_kafka_topic,
             value
         )
+
+    def handle_hue_status(self, slack_event: Dict[str, Any]):
+        room_texts = []
+        for group in self.hue_bridge.groups:
+            if not group.on:
+                brightness_percentage = 0
+            else:
+                brightness_percentage = round(group.brightness / 255 * 100)
+
+            room_texts.append("*{0}*: {1}".format(group.name, brightness_percentage))
+
+        room_texts.sort()
+
+        text = "Current Hue status:\n{0}".format('\n'.join(room_texts))
+
+        self.send_message(channel=slack_event.get('channel'), text=text)
 
     def run(self):
         for record in self.kafka_consumer:
@@ -62,9 +84,9 @@ class PapikaBotHue:
                 continue
 
             log.info("Received Slack event: {0}".format(slack_event))
-            received_text = slack_event.get('text')
-            channel = slack_event.get('channel')
 
+            received_text = slack_event.get('text')
             received_tokens = received_text.split()
+
             if received_tokens == ['hue', 'status']:
-                self.send_message(channel=channel, text="Pretend this *is* _Hue_ status!")
+                self.handle_hue_status(slack_event)
